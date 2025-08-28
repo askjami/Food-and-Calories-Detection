@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Food Calorie Detection v6</title>
+<title>Food Calorie Detection</title>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 <style>
@@ -56,20 +56,48 @@ let model;
 let modelReady = false;
 let videoStreamActive = false;
 
-// --- Small calorie database (expandable) ---
+// --- Expanded Calorie Database (30+ items, avg kcal per medium serving) ---
 const CAL_DB = {
 apple: 95,
 banana: 105,
 orange: 62,
-broccoli: 55,
+grape: 62, // per cup
+watermelon: 85, // per wedge
+pineapple: 82, // per cup
+mango: 201, // 1 fruit
+strawberry: 50, // per cup
+blueberry: 85, // per cup
+pear: 102,
+peach: 58,
+plum: 30,
+cherry: 77, // per cup
+avocado: 240,
+tomato: 22,
+cucumber: 16,
 carrot: 41,
-pizza: 285,
+broccoli: 55,
+spinach: 23, // per cup
+potato: 161,
+sweetpotato: 180,
+corn: 96, // 1 cob
+rice: 206, // 1 cup cooked
+pasta: 221, // 1 cup cooked
+bread: 80, // 1 slice
 sandwich: 300,
+pizza: 285,
+hamburger: 350,
+hotdog: 150,
+fries: 365,
+egg: 78,
+chicken: 335, // roasted breast
+beef: 250, // 100g
+fish: 200, // 100g avg
 donut: 195,
 cake: 340,
-hotdog: 150,
-hamburger: 350,
-fries: 365,
+cookie: 160, // medium
+milk: 122, // 1 cup
+cheese: 113, // 1 slice
+yogurt: 150 // 1 cup
 };
 
 // --- Load Coco-SSD ---
