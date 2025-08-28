@@ -3,16 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Food Calorie Detection</title>
+<title>Food Calorie Detection v6</title>
 <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
 <style>
 body {
 font-family: Arial, sans-serif;
 text-align: center;
 margin: 20px;
 }
-video, img {
+video, canvas {
 width: 100%;
 max-width: 600px;
 border: 1px solid black;
@@ -25,67 +25,56 @@ font-size: 1em;
 }
 #calorieResult {
 margin-top: 20px;
-font-size: 1.2em;
+font-size: 1.1em;
 font-weight: bold;
 }
 </style>
 </head>
 <body>
-<h1>🍎 Food Calorie Detection</h1>
+<h1>🍽️ Food Calorie Detection</h1>
 
 <div id="controls">
 <button id="startButton">Turn Camera On</button>
-<button id="zoomInButton" disabled>Zoom In</button>
-<button id="zoomOutButton" disabled>Zoom Out</button>
-<button id="captureButton" disabled>Capture Image</button>
-<button id="switchViewButton" disabled>Switch to Image</button>
+<button id="captureButton" disabled>Capture & Detect</button>
 </div>
 
-<video id="video" autoplay></video>
-<img id="capturedImage" style="display:none;">
+<video id="video" autoplay muted></video>
+<canvas id="canvas" style="display:none;"></canvas>
+
 <p id="calorieResult">Loading model, please wait…</p>
 
 <script>
 const video = document.getElementById('video');
-const capturedImage = document.getElementById('capturedImage');
-const calorieResult = document.getElementById('calorieResult');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
 const startButton = document.getElementById('startButton');
-const zoomInButton = document.getElementById('zoomInButton');
-const zoomOutButton = document.getElementById('zoomOutButton');
 const captureButton = document.getElementById('captureButton');
-const switchViewButton = document.getElementById('switchViewButton');
+const calorieResult = document.getElementById('calorieResult');
 
 let stream;
-let videoStreamActive = false;
-let currentView = 'video';
-let zoomLevel = 1;
 let model;
 let modelReady = false;
+let videoStreamActive = false;
 
 // --- Small calorie database (expandable) ---
-const CAL_DB = [
-{ keys: ['pizza'], label: 'Pizza', kcal: 285 },
-{ keys: ['hamburger','burger','cheeseburger','meat loaf'], label: 'Burger', kcal: 350 },
-{ keys: ['hotdog','hot dog'], label: 'Hot Dog', kcal: 150 },
-{ keys: ['french fries','fries'], label: 'French Fries', kcal: 365 },
-{ keys: ['apple'], label: 'Apple', kcal: 95 },
-{ keys: ['banana'], label: 'Banana', kcal: 105 },
-{ keys: ['orange'], label: 'Orange', kcal: 62 },
-{ keys: ['broccoli'], label: 'Broccoli', kcal: 55 },
-{ keys: ['carrot'], label: 'Carrot', kcal: 41 }
-];
+const CAL_DB = {
+apple: 95,
+banana: 105,
+orange: 62,
+broccoli: 55,
+carrot: 41,
+pizza: 285,
+sandwich: 300,
+donut: 195,
+cake: 340,
+hotdog: 150,
+hamburger: 350,
+fries: 365,
+};
 
-function estimateCaloriesFromLabel(label) {
-const l = label.toLowerCase();
-for (const item of CAL_DB) {
-if (item.keys.some(k => l.includes(k))) return item;
-}
-return null;
-}
-
-// --- Load MobileNet model ---
+// --- Load Coco-SSD ---
 (async () => {
-model = await mobilenet.load();
+model = await cocoSsd.load();
 modelReady = true;
 calorieResult.textContent = "✅ Model loaded. Ready!";
 })();
@@ -98,96 +87,62 @@ navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
 stream = s;
 video.srcObject = stream;
 startButton.textContent = 'Turn Camera Off';
-zoomInButton.disabled = false;
-zoomOutButton.disabled = false;
 captureButton.disabled = false;
-switchViewButton.disabled = false;
 videoStreamActive = true;
 })
 .catch(err => alert("Error accessing camera: " + err));
 } else {
 stream.getTracks().forEach(track => track.stop());
 startButton.textContent = 'Turn Camera On';
-zoomInButton.disabled = true;
-zoomOutButton.disabled = true;
 captureButton.disabled = true;
-switchViewButton.disabled = true;
 videoStreamActive = false;
-zoomLevel = 1;
-video.style.transform = `scale(${zoomLevel})`;
 }
 });
 
-// --- Zoom controls ---
-zoomInButton.addEventListener('click', () => {
-zoomLevel += 0.1;
-video.style.transform = `scale(${zoomLevel})`;
-});
-zoomOutButton.addEventListener('click', () => {
-if (zoomLevel > 0.2) {
-zoomLevel -= 0.1;
-video.style.transform = `scale(${zoomLevel})`;
-}
-});
-
-// --- Capture & classify ---
-captureButton.addEventListener('click', () => {
+// --- Capture and run detection ---
+captureButton.addEventListener('click', async () => {
 if (!videoStreamActive || !modelReady) return;
-calorieResult.textContent = '🔍 Capturing and analyzing...';
+calorieResult.textContent = "🔍 Detecting foods...";
 
-const canvas = document.createElement('canvas');
-canvas.width = video.videoWidth || 640;
-canvas.height = video.videoHeight || 480;
-canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-capturedImage.src = canvas.toDataURL('image/png');
+// Draw current video frame onto canvas
+canvas.width = video.videoWidth;
+canvas.height = video.videoHeight;
+ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-// Wait until image loads before classification
-capturedImage.onload = async () => {
-try {
-const predictions = await model.classify(capturedImage, 5);
-console.log('Predictions:', predictions);
+// Run detection
+const predictions = await model.detect(canvas);
+console.log(predictions);
 
-let mapped = estimateCaloriesFromLabel(predictions[0].className);
-if (!mapped) {
-for (let i = 1; i < predictions.length; i++) {
-mapped = estimateCaloriesFromLabel(predictions[i].className);
-if (mapped) break;
-}
-}
-
-const top3 = predictions.slice(0,3)
-.map(p => `${p.className} (${(p.probability*100).toFixed(1)}%)`)
-.join(' • ');
-
-if (mapped) {
-calorieResult.innerHTML =
-`✅ <strong>${mapped.label}</strong> ≈ <strong>${mapped.kcal} kcal</strong><br/>
-<span style="font-size:.9em;color:#555">AI guesses: ${top3}</span>`;
-} else {
-calorieResult.innerHTML =
-`⚠️ No calorie match found.<br/>
-Top guesses: ${top3}`;
-}
-} catch (err) {
-console.error(err);
-calorieResult.textContent = '❌ Error during detection.';
-}
-};
+// Draw bounding boxes
+ctx.lineWidth = 3;
+ctx.font = "16px Arial";
+predictions.forEach(p => {
+ctx.strokeStyle = "red";
+ctx.fillStyle = "red";
+ctx.strokeRect(...p.bbox);
+ctx.fillText(p.class + " " + Math.round(p.score*100)+"%", p.bbox[0], p.bbox[1] > 20 ? p.bbox[1]-5 : 10);
 });
 
-// --- Switch view ---
-switchViewButton.addEventListener('click', () => {
-if (currentView === 'video') {
-video.style.display = 'none';
-capturedImage.style.display = 'block';
-switchViewButton.textContent = 'Switch to Video';
-currentView = 'image';
-} else {
-capturedImage.style.display = 'none';
-video.style.display = 'block';
-switchViewButton.textContent = 'Switch to Image';
-currentView = 'video';
+// Map to calories
+let totalCalories = 0;
+let breakdown = [];
+predictions.forEach(p => {
+const food = p.class.toLowerCase();
+if (CAL_DB[food]) {
+totalCalories += CAL_DB[food];
+breakdown.push(`${p.class} ≈ ${CAL_DB[food]} kcal`);
 }
+});
+
+if (breakdown.length > 0) {
+calorieResult.innerHTML =
+`✅ Detected foods:<br>${breakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
+} else {
+calorieResult.textContent = "⚠️ No known foods detected.";
+}
+
+// Show canvas with annotations
+canvas.style.display = "block";
 });
 </script>
 </body>
