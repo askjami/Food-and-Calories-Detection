@@ -16,4 +16,100 @@
       width: 100%;
       max-width: 600px;
       border: 1px solid #444;
-      margin-bott
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Blind Guide + Food Detection</h1>
+  <video id="webcam" autoplay muted playsinline></video>
+  <canvas id="canvas"></canvas>
+  <p id="status">Loading model...</p>
+
+  <script>
+    const video = document.getElementById('webcam');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const statusText = document.getElementById('status');
+
+    let model;
+    let previousLabel = '';
+
+    const foodCalories = {
+      'banana': 105,
+      'apple': 95,
+      'orange': 62,
+      'pizza': 285,
+      'hot dog': 150,
+      'donut': 195,
+      'cake': 235,
+      'sandwich': 300,
+      'broccoli': 55,
+      'carrot': 25
+    };
+
+    async function setupCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' },
+        audio: false
+      });
+      video.srcObject = stream;
+
+      return new Promise(resolve => {
+        video.onloadedmetadata = () => {
+          resolve(video);
+        };
+      });
+    }
+
+    async function loadModel() {
+      model = await cocoSsd.load();
+      statusText.innerText = 'Model loaded. Detecting...';
+      detectFrame();
+    }
+
+    function speak(text) {
+      const utterance = new SpeechSynthesisUtterance(text);
+      speechSynthesis.cancel(); // Stop previous utterance
+      speechSynthesis.speak(utterance);
+    }
+
+    async function detectFrame() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      const predictions = await model.detect(video);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      predictions.forEach(pred => {
+        const [x, y, width, height] = pred.bbox;
+        ctx.strokeStyle = '#00FFFF';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x, y, width, height);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = '#00FFFF';
+        ctx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+
+        if (foodCalories[pred.class] && pred.class !== previousLabel) {
+          previousLabel = pred.class;
+          const calories = foodCalories[pred.class];
+          const message = `Detected ${pred.class}. Estimated calories: ${calories}`;
+          console.log(message);
+          speak(message);
+        }
+      });
+
+      requestAnimationFrame(detectFrame);
+    }
+
+    async function main() {
+      await setupCamera();
+      video.play();
+      await loadModel();
+    }
+
+    main();
+  </script>
+</body>
+</html>
