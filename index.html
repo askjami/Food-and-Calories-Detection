@@ -58,6 +58,7 @@ let videoStreamActive = false;
 let currentView = 'video';
 let zoomLevel = 1;
 
+// --- Start / stop camera ---
 startButton.addEventListener('click', () => {
 if (!videoStreamActive) {
 navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
@@ -85,6 +86,7 @@ video.style.transform = `scale(${zoomLevel})`;
 }
 });
 
+// --- Zoom controls ---
 zoomInButton.addEventListener('click', () => {
 zoomLevel += 0.1;
 video.style.transform = `scale(${zoomLevel})`;
@@ -97,15 +99,41 @@ video.style.transform = `scale(${zoomLevel})`;
 }
 });
 
+// --- Capture and detect calories ---
 captureButton.addEventListener('click', () => {
 const canvas = document.createElement('canvas');
 canvas.width = video.videoWidth;
 canvas.height = video.videoHeight;
 canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 capturedImage.src = canvas.toDataURL('image/png');
-calorieResult.textContent = "Calorie detection placeholder.";
+
+calorieResult.textContent = "🔍 Detecting food and calories...";
+
+// --- Send to LogMeal API ---
+fetch("https://api.logmeal.es/v2/image/analysis/nutritionalInfo", {
+method: "POST",
+headers: {
+"Content-Type": "application/json",
+"Authorization": "Bearer YOUR_LOGMEAL_API_KEY"
+},
+body: JSON.stringify({ image: capturedImage.src })
+})
+.then(res => res.json())
+.then(data => {
+console.log("API response:", data);
+if (data.foodName && data.calories) {
+calorieResult.textContent = `${data.foodName} ~ ${data.calories} kcal`;
+} else {
+calorieResult.textContent = "⚠️ Could not recognize food.";
+}
+})
+.catch(err => {
+console.error(err);
+calorieResult.textContent = "❌ Error detecting food.";
+});
 });
 
+// --- Switch between video and captured image ---
 switchViewButton.addEventListener('click', () => {
 if (currentView === 'video') {
 video.style.display = 'none';
