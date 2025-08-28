@@ -1,152 +1,321 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8">
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Food Calorie Detection</title>
+
 <style>
+
 body {
-font-family: Arial, sans-serif;
-text-align: center;
-margin: 20px;
+
+  font-family: Arial, sans-serif;
+
+  text-align: center;
+
+  margin: 20px;
+
 }
+
 video, img {
-width: 100%;
-max-width: 600px;
-border: 1px solid black;
-margin-bottom: 10px;
+
+  width: 100%;
+
+  max-width: 600px;
+
+  border: 1px solid black;
+
+  margin-bottom: 10px;
+
 }
+
 #controls button {
-margin: 5px;
-padding: 10px 15px;
-font-size: 1em;
+
+  margin: 5px;
+
+  padding: 10px 15px;
+
+  font-size: 1em;
+
 }
+
 #calorieResult {
-margin-top: 20px;
-font-size: 1.2em;
-font-weight: bold;
+
+  margin-top: 20px;
+
+  font-size: 1.2em;
+
+  font-weight: bold;
+
 }
+
 </style>
+
 </head>
+
 <body>
+
 <h1>Food Calorie Detection</h1>
 
+
+
 <div id="controls">
-<button id="startButton">Turn Camera On</button>
-<button id="zoomInButton" disabled>Zoom In</button>
-<button id="zoomOutButton" disabled>Zoom Out</button>
-<button id="captureButton" disabled>Capture Image</button>
-<button id="switchViewButton" disabled>Switch to Image</button>
+
+  <button id="startButton">Turn Camera On</button>
+
+  <button id="zoomInButton" disabled>Zoom In</button>
+
+  <button id="zoomOutButton" disabled>Zoom Out</button>
+
+  <button id="captureButton" disabled>Capture Image</button>
+
+  <button id="switchViewButton" disabled>Switch to Image</button>
+
 </div>
 
+
+
 <video id="video" autoplay></video>
+
 <img id="capturedImage" style="display:none;">
+
 <p id="calorieResult">Calorie detection is not implemented yet.</p>
 
+
+
 <script>
+
 const video = document.getElementById('video');
+
 const capturedImage = document.getElementById('capturedImage');
+
 const calorieResult = document.getElementById('calorieResult');
+
 const startButton = document.getElementById('startButton');
+
 const zoomInButton = document.getElementById('zoomInButton');
+
 const zoomOutButton = document.getElementById('zoomOutButton');
+
 const captureButton = document.getElementById('captureButton');
+
 const switchViewButton = document.getElementById('switchViewButton');
 
+
+
 let stream;
+
 let videoStreamActive = false;
+
 let currentView = 'video';
+
 let zoomLevel = 1;
 
+
+
 // --- Start / stop camera ---
+
 startButton.addEventListener('click', () => {
-if (!videoStreamActive) {
-navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-.then(s => {
-stream = s;
-video.srcObject = stream;
-startButton.textContent = 'Turn Camera Off';
-zoomInButton.disabled = false;
-zoomOutButton.disabled = false;
-captureButton.disabled = false;
-switchViewButton.disabled = false;
-videoStreamActive = true;
-})
-.catch(err => alert("Error accessing camera: " + err));
-} else {
-stream.getTracks().forEach(track => track.stop());
-startButton.textContent = 'Turn Camera On';
-zoomInButton.disabled = true;
-zoomOutButton.disabled = true;
-captureButton.disabled = true;
-switchViewButton.disabled = true;
-videoStreamActive = false;
-zoomLevel = 1;
-video.style.transform = `scale(${zoomLevel})`;
-}
+
+  if (!videoStreamActive) {
+
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+
+      .then(s => {
+
+        stream = s;
+
+        video.srcObject = stream;
+
+        startButton.textContent = 'Turn Camera Off';
+
+        zoomInButton.disabled = false;
+
+        zoomOutButton.disabled = false;
+
+        captureButton.disabled = false;
+
+        switchViewButton.disabled = false;
+
+        videoStreamActive = true;
+
+      })
+
+      .catch(err => alert("Error accessing camera: " + err));
+
+  } else {
+
+    stream.getTracks().forEach(track => track.stop());
+
+    startButton.textContent = 'Turn Camera On';
+
+    zoomInButton.disabled = true;
+
+    zoomOutButton.disabled = true;
+
+    captureButton.disabled = true;
+
+    switchViewButton.disabled = true;
+
+    videoStreamActive = false;
+
+    zoomLevel = 1;
+
+    video.style.transform = `scale(${zoomLevel})`;
+
+  }
+
 });
+
+
 
 // --- Zoom controls ---
+
 zoomInButton.addEventListener('click', () => {
-zoomLevel += 0.1;
-video.style.transform = `scale(${zoomLevel})`;
+
+  zoomLevel += 0.1;
+
+  video.style.transform = `scale(${zoomLevel})`;
+
 });
+
+
 
 zoomOutButton.addEventListener('click', () => {
-if (zoomLevel > 0.2) {
-zoomLevel -= 0.1;
-video.style.transform = `scale(${zoomLevel})`;
-}
+
+  if (zoomLevel > 0.2) {
+
+    zoomLevel -= 0.1;
+
+    video.style.transform = `scale(${zoomLevel})`;
+
+  }
+
 });
+
+
 
 // --- Capture and detect calories ---
+
 captureButton.addEventListener('click', () => {
-const canvas = document.createElement('canvas');
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
-capturedImage.src = canvas.toDataURL('image/png');
 
-calorieResult.textContent = "🔍 Detecting food and calories...";
+  const canvas = document.createElement('canvas');
 
-// --- Send to LogMeal API ---
-fetch("https://api.logmeal.es/v2/image/analysis/nutritionalInfo", {
-method: "POST",
-headers: {
-"Content-Type": "application/json",
-"Authorization": "Bearer YOUR_LOGMEAL_API_KEY"
-},
-body: JSON.stringify({ image: capturedImage.src })
-})
-.then(res => res.json())
-.then(data => {
-console.log("API response:", data);
-if (data.foodName && data.calories) {
-calorieResult.textContent = `${data.foodName} ~ ${data.calories} kcal`;
-} else {
-calorieResult.textContent = "⚠️ Could not recognize food.";
-}
-})
-.catch(err => {
-console.error(err);
-calorieResult.textContent = "❌ Error detecting food.";
+  canvas.width = video.videoWidth;
+
+  canvas.height = video.videoHeight;
+
+  canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  capturedImage.src = canvas.toDataURL('image/jpeg');
+
+
+
+  calorieResult.textContent = "🔍 Detecting food and calories...";
+
+
+
+  // Convert base64 → Blob
+
+  fetch(capturedImage.src)
+
+    .then(res => res.blob())
+
+    .then(blob => {
+
+      const formData = new FormData();
+
+      formData.append("image", blob, "food.jpg");
+
+
+
+      return fetch("https://api.logmeal.es/v2/recognition/complete", {
+
+        method: "POST",
+
+        headers: {
+
+          "Authorization": "Bearer YOUR_LOGMEAL_API_KEY"  // <<-- replace with your real key
+
+        },
+
+        body: formData
+
+      });
+
+    })
+
+    .then(res => res.json())
+
+    .then(data => {
+
+      console.log("LogMeal response:", data);
+
+
+
+      if (data.recognition_results && data.recognition_results.length > 0) {
+
+        const food = data.recognition_results[0].name || "Unknown food";
+
+        const calories = data.nutritional_info?.calories || "N/A";
+
+        calorieResult.textContent = `${food} ~ ${calories} kcal`;
+
+      } else {
+
+        calorieResult.textContent = "⚠️ Could not recognize food.";
+
+      }
+
+    })
+
+    .catch(err => {
+
+      console.error(err);
+
+      calorieResult.textContent = "❌ Error detecting food.";
+
+    });
+
 });
-});
+
+
 
 // --- Switch between video and captured image ---
+
 switchViewButton.addEventListener('click', () => {
-if (currentView === 'video') {
-video.style.display = 'none';
-capturedImage.style.display = 'block';
-switchViewButton.textContent = 'Switch to Video';
-currentView = 'image';
-} else {
-capturedImage.style.display = 'none';
-video.style.display = 'block';
-switchViewButton.textContent = 'Switch to Image';
-currentView = 'video';
-}
+
+  if (currentView === 'video') {
+
+    video.style.display = 'none';
+
+    capturedImage.style.display = 'block';
+
+    switchViewButton.textContent = 'Switch to Video';
+
+    currentView = 'image';
+
+  } else {
+
+    capturedImage.style.display = 'none';
+
+    video.style.display = 'block';
+
+    switchViewButton.textContent = 'Switch to Image';
+
+    currentView = 'video';
+
+  }
+
 });
+
 </script>
+
 </body>
+
 </html>
