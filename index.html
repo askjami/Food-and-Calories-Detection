@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Blind Guide + Food Detection — Version 9.1</title>
+  <title>Blind Guide + Food/Object Detection</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h1>Blind Guide + Food Detection</h1>
+  <h1>Blind Guide + Food/Object Detection</h1>
   <video id="webcam" autoplay muted playsinline></video>
   <canvas id="canvas"></canvas>
   <p id="status">Loading model...</p>
@@ -33,20 +33,61 @@
     const statusText = document.getElementById('status');
 
     let model;
-    let previousLabel = '';
+    const recentDetections = {};
+    const SPEAK_DELAY = 5000;
 
+    // Expanded food, fruit, and vegetable calorie data
     const foodCalories = {
-      'banana': 105,
       'apple': 95,
+      'banana': 105,
       'orange': 62,
-      'pizza': 285,
-      'hot dog': 150,
-      'donut': 195,
-      'cake': 235,
-      'sandwich': 300,
+      'carrot': 25,
       'broccoli': 55,
-      'carrot': 25
+      'cake': 235,
+      'donut': 195,
+      'hot dog': 150,
+      'pizza': 285,
+      'sandwich': 300,
+      'sandwiches': 300,
+      'cupcake': 200,
+      'bread': 80,
+      'egg': 78,
+      'cheese': 113,
+      'hamburger': 250,
+      'chocolate': 210,
+      'ice cream': 137,
+      'avocado': 160,
+      'strawberry': 4,
+      'blueberry': 1,
+      'grape': 2,
+      'pineapple': 50,
+      'mango': 99,
+      'pear': 100,
+      'kiwi': 42,
+      'cucumber': 16,
+      'tomato': 22,
+      'pepper': 20,
+      'lettuce': 5,
+      'corn': 88,
+      'onion': 40,
+      'garlic': 5,
+      'potato': 163,
+      'peach': 59,
+      'plum': 30,
+      'watermelon': 85,
+      'rice': 206,
+      'pasta': 221,
+      'milk': 103
     };
+
+    // Common objects (no calories)
+    const commonObjects = [
+      'person', 'car', 'bicycle', 'motorcycle', 'bus', 'truck', 'traffic light',
+      'stop sign', 'bench', 'backpack', 'umbrella', 'handbag', 'tie', 'suitcase',
+      'chair', 'couch', 'potted plant', 'bed', 'tv', 'laptop', 'mouse', 'keyboard',
+      'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator',
+      'book', 'clock'
+    ];
 
     async function setupCamera() {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -56,9 +97,7 @@
       video.srcObject = stream;
 
       return new Promise(resolve => {
-        video.onloadedmetadata = () => {
-          resolve(video);
-        };
+        video.onloadedmetadata = () => resolve(video);
       });
     }
 
@@ -70,7 +109,7 @@
 
     function speak(text) {
       const utterance = new SpeechSynthesisUtterance(text);
-      speechSynthesis.cancel(); // Stop previous utterance
+      speechSynthesis.cancel();
       speechSynthesis.speak(utterance);
     }
 
@@ -82,21 +121,30 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      const now = Date.now();
+
       predictions.forEach(pred => {
         const [x, y, width, height] = pred.bbox;
+        const label = pred.class.toLowerCase();
+
+        // Draw rectangle and label
         ctx.strokeStyle = '#00FFFF';
         ctx.lineWidth = 2;
         ctx.strokeRect(x, y, width, height);
         ctx.font = '16px Arial';
         ctx.fillStyle = '#00FFFF';
-        ctx.fillText(pred.class, x, y > 10 ? y - 5 : 10);
+        ctx.fillText(label, x, y > 10 ? y - 5 : 10);
 
-        if (foodCalories[pred.class] && pred.class !== previousLabel) {
-          previousLabel = pred.class;
-          const calories = foodCalories[pred.class];
-          const message = `Detected ${pred.class}. Estimated calories: ${calories}`;
-          console.log(message);
-          speak(message);
+        if (!recentDetections[label] || now - recentDetections[label] > SPEAK_DELAY) {
+          recentDetections[label] = now;
+
+          if (foodCalories[label]) {
+            speak(`Detected ${label}. Estimated calories: ${foodCalories[label]}`);
+          } else if (commonObjects.includes(label)) {
+            speak(`Detected ${label}`);
+          } else {
+            speak(`Detected ${label}`);
+          }
         }
       });
 
