@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Blind Guide + Food & Object Detection with Calories - Version 8</title>
+  <title>Blind Guide + Food & Object Detection — Version 9</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
@@ -15,7 +15,7 @@
     video, canvas {
       width: 100%;
       max-width: 600px;
-      border: 1px solid black;
+      border: 1px solid #444;
       margin-bottom: 10px;
     }
     #controls button {
@@ -23,43 +23,37 @@
       padding: 10px 15px;
       font-size: 1em;
     }
-    #calorieResult {
+    #status {
       margin-top: 20px;
-      font-size: 1.1em;
+      font-size: 1.2em;
       font-weight: bold;
     }
   </style>
 </head>
 <body>
-  <h1>🦯 Blind Guide + 🍽️ Food & Object Detection <br><small>Version 8</small></h1>
-
+  <h1>🦯 Real-Time Food & Object Detection<br><small>With Calories & Audio — Version 9</small></h1>
+  
   <div id="controls">
     <button id="startButton">Turn Camera On</button>
-    <button id="captureButton" disabled>Capture & Detect</button>
-    <button id="speakButton" disabled>🔊 Speak Results</button>
+    <button id="muteButton" disabled>🔊 Mute</button>
   </div>
 
   <video id="video" autoplay muted></video>
   <canvas id="canvas" style="display:none;"></canvas>
-
-  <p id="calorieResult">Loading model, please wait…</p>
+  <div id="status">Loading model, please wait…</div>
 
   <script>
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     const startButton = document.getElementById('startButton');
-    const captureButton = document.getElementById('captureButton');
-    const speakButton = document.getElementById('speakButton');
-    const calorieResult = document.getElementById('calorieResult');
+    const muteButton = document.getElementById('muteButton');
+    const status = document.getElementById('status');
 
-    let stream;
-    let model;
-    let modelReady = false;
-    let videoStreamActive = false;
+    let model, stream, isMuted = false, modelReady = false;
+    let lastSpoken = 0;
 
-    let lastSpokenText = ''; // For voice output
-
+    // Food calorie database
     const CAL_DB = {
       apple: 95, banana: 105, orange: 62, grape: 62, watermelon: 85, pineapple: 82,
       mango: 201, strawberry: 50, blueberry: 85, pear: 102, peach: 58, plum: 30,
@@ -74,99 +68,101 @@
       return label.toLowerCase().replace(/[\s_-]/g, "");
     }
 
-    // --- Load COCO-SSD Model ---
+    // Load model
     (async () => {
       model = await cocoSsd.load();
       modelReady = true;
-      calorieResult.textContent = "✅ Model loaded. Ready!";
+      status.textContent = "✅ Model loaded. Press 'Turn Camera On'";
     })();
 
-    // --- Camera Toggle ---
-    startButton.addEventListener('click', () => {
-      if (!videoStreamActive) {
-        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-          .then(s => {
-            stream = s;
-            video.srcObject = stream;
-            startButton.textContent = 'Turn Camera Off';
-            captureButton.disabled = false;
-            videoStreamActive = true;
-          })
-          .catch(err => alert("Error accessing camera: " + err));
+    // Start/Stop camera
+    startButton.onclick = async () => {
+      if (!stream) {
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+          video.srcObject = stream;
+          startButton.textContent = "Turn Camera Off";
+          muteButton.disabled = false;
+          runRealtimeDetection();
+        } catch (err) {
+          alert("Error accessing camera: " + err.message);
+        }
       } else {
-        stream.getTracks().forEach(track => track.stop());
-        startButton.textContent = 'Turn Camera On';
-        captureButton.disabled = true;
-        speakButton.disabled = true;
-        videoStreamActive = false;
+        stream.getTracks().forEach(t => t.stop());
+        stream = null;
+        startButton.textContent = "Turn Camera On";
+        muteButton.disabled = true;
+        status.textContent = "Camera turned off.";
       }
-    });
+    };
 
-    // --- Capture and Detect ---
-    captureButton.addEventListener('click', async () => {
-      if (!videoStreamActive || !modelReady) return;
-      calorieResult.textContent = "🔍 Detecting...";
+    // Toggle speech
+    muteButton.onclick = () => {
+      isMuted = !isMuted;
+      muteButton.textContent = isMuted ? "🔇 Unmute" : "🔊 Mute";
+    };
 
+    // Real-time detection
+    async function runRealtimeDetection() {
+      canvas.style.display = "none";
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      const predictions = await model.detect(canvas);
-      console.log(predictions);
+      if (modelReady && stream) {
+        const predictions = await model.detect(canvas);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        ctx.lineWidth = 3;
+        ctx.font = "16px Arial";
 
-      ctx.lineWidth = 3;
-      ctx.font = "16px Arial";
-      ctx.textBaseline = "top";
+        const detected = {};
+        let totalCalories = 0;
+        let foodItems = [];
 
-      let totalCalories = 0;
-      let foodBreakdown = [];
-      let allDetections = [];
+        predictions.forEach(p => {
+          const label = normalizeLabel(p.class);
+          const isFood = CAL_DB.hasOwnProperty(label);
+          const cal = isFood ? CAL_DB[label] : null;
 
-      predictions.forEach(p => {
-        const normalized = normalizeLabel(p.class);
-        const isFood = CAL_DB.hasOwnProperty(normalized);
-        const cal = isFood ? CAL_DB[normalized] : null;
+          ctx.strokeStyle = isFood ? "green" : "red";
+          ctx.fillStyle = isFood ? "green" : "red";
+          ctx.strokeRect(...p.bbox);
+          ctx.fillText(`${p.class} ${Math.round(p.score * 100)}%`, p.bbox[0], p.bbox[1]);
 
-        ctx.strokeStyle = isFood ? "green" : "red";
-        ctx.fillStyle = isFood ? "green" : "red";
-        ctx.strokeRect(...p.bbox);
-        ctx.fillText(`${p.class} ${Math.round(p.score * 100)}%`, p.bbox[0], p.bbox[1]);
+          detected[p.class] = true;
 
-        allDetections.push(p.class);
+          if (cal) {
+            totalCalories += cal;
+            foodItems.push(`${p.class} (${cal} kcal)`);
+          }
+        });
 
-        if (cal) {
-          totalCalories += cal;
-          foodBreakdown.push(`${p.class} ≈ ${cal} calories`);
+        const objectList = Object.keys(detected).join(", ");
+        let summary = `Detected: ${objectList}`;
+        if (foodItems.length > 0) {
+          summary += `<br>Food items: ${foodItems.join(", ")}`;
+          summary += `<br><strong>Total ≈ ${totalCalories} kcal</strong>`;
         }
-      });
 
-      let resultHTML = `🔎 Detected objects: ${[...new Set(allDetections)].join(", ")}<br><br>`;
-      let speakOutput = `Detected: ${[...new Set(allDetections)].join(", ")}. `;
+        status.innerHTML = summary;
 
-      if (foodBreakdown.length > 0) {
-        resultHTML += `✅ Detected food items:<br>${foodBreakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} calories</strong>`;
-        speakOutput += `Calories detected. ${foodBreakdown.join(". ")}. Total approximately ${totalCalories} calories.`;
-      } else {
-        resultHTML += "⚠️ No known foods detected in calorie database.";
-        speakOutput += "No food items found in calorie database.";
+        const now = Date.now();
+        if (!isMuted && now - lastSpoken > 3000 && objectList) {
+          lastSpoken = now;
+          let spokenText = `Detected: ${objectList}.`;
+          if (foodItems.length > 0) {
+            spokenText += ` Food: ${foodItems.join(", ")}. Total about ${totalCalories} calories.`;
+          }
+          const utter = new SpeechSynthesisUtterance(spokenText);
+          window.speechSynthesis.cancel(); // cancel previous
+          window.speechSynthesis.speak(utter);
+        }
       }
 
-      calorieResult.innerHTML = resultHTML;
-      lastSpokenText = speakOutput;
-      speakButton.disabled = false;
-      canvas.style.display = "block";
-    });
-
-    // --- Text-to-Speech for Accessibility ---
-    speakButton.addEventListener('click', () => {
-      if (!lastSpokenText) return;
-      const synth = window.speechSynthesis;
-      const utter = new SpeechSynthesisUtterance(lastSpokenText);
-      utter.lang = "en-US";
-      utter.rate = 1;
-      synth.cancel(); // Stop ongoing speech if any
-      synth.speak(utter);
-    });
+      if (stream) requestAnimationFrame(runRealtimeDetection);
+    }
   </script>
 </body>
 </html>
