@@ -1,177 +1,143 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Food Calorie Detection</title>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
-<style>
-body {
-font-family: Arial, sans-serif;
-text-align: center;
-margin: 20px;
-}
-video, canvas {
-width: 100%;
-max-width: 600px;
-border: 1px solid black;
-margin-bottom: 10px;
-}
-#controls button {
-margin: 5px;
-padding: 10px 15px;
-font-size: 1em;
-}
-#calorieResult {
-margin-top: 20px;
-font-size: 1.1em;
-font-weight: bold;
-}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Food Calorie Detection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      text-align: center;
+      margin: 20px;
+    }
+    video, canvas {
+      width: 100%;
+      max-width: 600px;
+      border: 1px solid black;
+      margin-bottom: 10px;
+    }
+    #controls button {
+      margin: 5px;
+      padding: 10px 15px;
+      font-size: 1em;
+    }
+    #calorieResult {
+      margin-top: 20px;
+      font-size: 1.1em;
+      font-weight: bold;
+    }
+  </style>
 </head>
 <body>
-<h1>🍽️ Food Calorie Detection</h1>
+  <h1>🍽️ Food Calorie Detection</h1>
 
-<div id="controls">
-<button id="startButton">Turn Camera On</button>
-<button id="captureButton" disabled>Capture & Detect</button>
-</div>
+  <div id="controls">
+    <button id="startButton">Turn Camera On</button>
+    <button id="captureButton" disabled>Capture & Detect</button>
+  </div>
 
-<video id="video" autoplay muted></video>
-<canvas id="canvas" style="display:none;"></canvas>
+  <video id="video" autoplay muted></video>
+  <canvas id="canvas" style="display:none;"></canvas>
 
-<p id="calorieResult">Loading model, please wait…</p>
+  <p id="calorieResult">Loading model, please wait…</p>
 
-<script>
-const video = document.getElementById('video');
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const startButton = document.getElementById('startButton');
-const captureButton = document.getElementById('captureButton');
-const calorieResult = document.getElementById('calorieResult');
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const startButton = document.getElementById('startButton');
+    const captureButton = document.getElementById('captureButton');
+    const calorieResult = document.getElementById('calorieResult');
 
-let stream;
-let model;
-let modelReady = false;
-let videoStreamActive = false;
+    let stream;
+    let model;
+    let modelReady = false;
+    let videoStreamActive = false;
 
-// --- Expanded Calorie Database (30+ items, avg kcal per medium serving) ---
-const CAL_DB = {
-apple: 95,
-banana: 105,
-orange: 62,
-grape: 62, // per cup
-watermelon: 85, // per wedge
-pineapple: 82, // per cup
-mango: 201, // 1 fruit
-strawberry: 50, // per cup
-blueberry: 85, // per cup
-pear: 102,
-peach: 58,
-plum: 30,
-cherry: 77, // per cup
-avocado: 240,
-tomato: 22,
-cucumber: 16,
-carrot: 41,
-broccoli: 55,
-spinach: 23, // per cup
-potato: 161,
-sweetpotato: 180,
-corn: 96, // 1 cob
-rice: 206, // 1 cup cooked
-pasta: 221, // 1 cup cooked
-bread: 80, // 1 slice
-sandwich: 300,
-pizza: 285,
-hamburger: 350,
-hotdog: 150,
-fries: 365,
-egg: 78,
-chicken: 335, // roasted breast
-beef: 250, // 100g
-fish: 200, // 100g avg
-donut: 195,
-cake: 340,
-cookie: 160, // medium
-milk: 122, // 1 cup
-cheese: 113, // 1 slice
-yogurt: 150 // 1 cup
-};
+    // --- Calorie database ---
+    const CAL_DB = {
+      apple: 95, banana: 105, orange: 62, grape: 62, watermelon: 85, pineapple: 82,
+      mango: 201, strawberry: 50, blueberry: 85, pear: 102, peach: 58, plum: 30,
+      cherry: 77, avocado: 240, tomato: 22, cucumber: 16, carrot: 41, broccoli: 55,
+      spinach: 23, potato: 161, sweetpotato: 180, corn: 96, rice: 206, pasta: 221,
+      bread: 80, sandwich: 300, pizza: 285, hamburger: 350, hotdog: 150, fries: 365,
+      egg: 78, chicken: 335, beef: 250, fish: 200, donut: 195, cake: 340,
+      cookie: 160, milk: 122, cheese: 113, yogurt: 150
+    };
 
-// --- Load Coco-SSD ---
-(async () => {
-model = await cocoSsd.load();
-modelReady = true;
-calorieResult.textContent = "✅ Model loaded. Ready!";
-})();
+    // Normalize class names for matching
+    function normalizeLabel(label) {
+      return label.toLowerCase().replace(/[\s_-]/g, "");
+    }
 
-// --- Start / stop camera ---
-startButton.addEventListener('click', () => {
-if (!videoStreamActive) {
-navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
-.then(s => {
-stream = s;
-video.srcObject = stream;
-startButton.textContent = 'Turn Camera Off';
-captureButton.disabled = false;
-videoStreamActive = true;
-})
-.catch(err => alert("Error accessing camera: " + err));
-} else {
-stream.getTracks().forEach(track => track.stop());
-startButton.textContent = 'Turn Camera On';
-captureButton.disabled = true;
-videoStreamActive = false;
-}
-});
+    // --- Load model ---
+    (async () => {
+      model = await cocoSsd.load();
+      modelReady = true;
+      calorieResult.textContent = "✅ Model loaded. Ready!";
+    })();
 
-// --- Capture and run detection ---
-captureButton.addEventListener('click', async () => {
-if (!videoStreamActive || !modelReady) return;
-calorieResult.textContent = "🔍 Detecting foods...";
+    // --- Start/Stop camera ---
+    startButton.addEventListener('click', () => {
+      if (!videoStreamActive) {
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+          .then(s => {
+            stream = s;
+            video.srcObject = stream;
+            startButton.textContent = 'Turn Camera Off';
+            captureButton.disabled = false;
+            videoStreamActive = true;
+          })
+          .catch(err => alert("Error accessing camera: " + err));
+      } else {
+        stream.getTracks().forEach(track => track.stop());
+        startButton.textContent = 'Turn Camera On';
+        captureButton.disabled = true;
+        videoStreamActive = false;
+      }
+    });
 
-// Draw current video frame onto canvas
-canvas.width = video.videoWidth;
-canvas.height = video.videoHeight;
-ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // --- Detect and estimate calories ---
+    captureButton.addEventListener('click', async () => {
+      if (!videoStreamActive || !modelReady) return;
+      calorieResult.textContent = "🔍 Detecting foods...";
 
-// Run detection
-const predictions = await model.detect(canvas);
-console.log(predictions);
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-// Draw bounding boxes
-ctx.lineWidth = 3;
-ctx.font = "16px Arial";
-predictions.forEach(p => {
-ctx.strokeStyle = "red";
-ctx.fillStyle = "red";
-ctx.strokeRect(...p.bbox);
-ctx.fillText(p.class + " " + Math.round(p.score*100)+"%", p.bbox[0], p.bbox[1] > 20 ? p.bbox[1]-5 : 10);
-});
+      const predictions = await model.detect(canvas);
+      console.log(predictions);
 
-// Map to calories
-let totalCalories = 0;
-let breakdown = [];
-predictions.forEach(p => {
-const food = p.class.toLowerCase();
-if (CAL_DB[food]) {
-totalCalories += CAL_DB[food];
-breakdown.push(`${p.class} ≈ ${CAL_DB[food]} kcal`);
-}
-});
+      ctx.lineWidth = 3;
+      ctx.font = "16px Arial";
 
-if (breakdown.length > 0) {
-calorieResult.innerHTML =
-`✅ Detected foods:<br>${breakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
-} else {
-calorieResult.textContent = "⚠️ No known foods detected.";
-}
+      let totalCalories = 0;
+      let breakdown = [];
 
-// Show canvas with annotations
-canvas.style.display = "block";
-});
-</script>
+      predictions.forEach(p => {
+        const rawLabel = normalizeLabel(p.class);
+        ctx.strokeStyle = "red";
+        ctx.fillStyle = "red";
+        ctx.strokeRect(...p.bbox);
+        ctx.fillText(`${p.class} ${Math.round(p.score * 100)}%`, p.bbox[0], p.bbox[1] > 20 ? p.bbox[1] - 5 : 10);
+
+        if (CAL_DB[rawLabel]) {
+          totalCalories += CAL_DB[rawLabel];
+          breakdown.push(`${p.class} ≈ ${CAL_DB[rawLabel]} kcal`);
+        }
+      });
+
+      if (breakdown.length > 0) {
+        calorieResult.innerHTML = `✅ Detected foods:<br>${breakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
+      } else {
+        calorieResult.textContent = "⚠️ No known foods detected.";
+      }
+
+      canvas.style.display = "block";
+    });
+  </script>
 </body>
 </html>
