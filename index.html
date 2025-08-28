@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Food Calorie Detection</title>
+  <title>Food & Object Detection with Calories - Version 8</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
@@ -31,7 +31,7 @@
   </style>
 </head>
 <body>
-  <h1>🍽️ Food Calorie Detection</h1>
+  <h1>🍽️ Food & Object Detection with Calories <br><small>Version 8</small></h1>
 
   <div id="controls">
     <button id="startButton">Turn Camera On</button>
@@ -56,7 +56,7 @@
     let modelReady = false;
     let videoStreamActive = false;
 
-    // --- Calorie database ---
+    // --- Food Calorie Database ---
     const CAL_DB = {
       apple: 95, banana: 105, orange: 62, grape: 62, watermelon: 85, pineapple: 82,
       mango: 201, strawberry: 50, blueberry: 85, pear: 102, peach: 58, plum: 30,
@@ -67,19 +67,18 @@
       cookie: 160, milk: 122, cheese: 113, yogurt: 150
     };
 
-    // Normalize class names for matching
     function normalizeLabel(label) {
       return label.toLowerCase().replace(/[\s_-]/g, "");
     }
 
-    // --- Load model ---
+    // --- Load the COCO-SSD model ---
     (async () => {
       model = await cocoSsd.load();
       modelReady = true;
       calorieResult.textContent = "✅ Model loaded. Ready!";
     })();
 
-    // --- Start/Stop camera ---
+    // --- Toggle camera ---
     startButton.addEventListener('click', () => {
       if (!videoStreamActive) {
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
@@ -99,10 +98,10 @@
       }
     });
 
-    // --- Detect and estimate calories ---
+    // --- Capture and detect objects ---
     captureButton.addEventListener('click', async () => {
       if (!videoStreamActive || !modelReady) return;
-      calorieResult.textContent = "🔍 Detecting foods...";
+      calorieResult.textContent = "🔍 Detecting...";
 
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
@@ -113,29 +112,40 @@
 
       ctx.lineWidth = 3;
       ctx.font = "16px Arial";
+      ctx.textBaseline = "top";
 
       let totalCalories = 0;
-      let breakdown = [];
+      let foodBreakdown = [];
+      let allDetections = [];
 
       predictions.forEach(p => {
-        const rawLabel = normalizeLabel(p.class);
-        ctx.strokeStyle = "red";
-        ctx.fillStyle = "red";
-        ctx.strokeRect(...p.bbox);
-        ctx.fillText(`${p.class} ${Math.round(p.score * 100)}%`, p.bbox[0], p.bbox[1] > 20 ? p.bbox[1] - 5 : 10);
+        const normalized = normalizeLabel(p.class);
+        const isFood = CAL_DB.hasOwnProperty(normalized);
+        const cal = isFood ? CAL_DB[normalized] : null;
 
-        if (CAL_DB[rawLabel]) {
-          totalCalories += CAL_DB[rawLabel];
-          breakdown.push(`${p.class} ≈ ${CAL_DB[rawLabel]} kcal`);
+        // Draw bounding box
+        ctx.strokeStyle = isFood ? "green" : "red";
+        ctx.fillStyle = isFood ? "green" : "red";
+        ctx.strokeRect(...p.bbox);
+        ctx.fillText(`${p.class} ${Math.round(p.score * 100)}%`, p.bbox[0], p.bbox[1]);
+
+        allDetections.push(p.class);
+
+        if (cal) {
+          totalCalories += cal;
+          foodBreakdown.push(`${p.class} ≈ ${cal} kcal`);
         }
       });
 
-      if (breakdown.length > 0) {
-        calorieResult.innerHTML = `✅ Detected foods:<br>${breakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
+      let resultHTML = `🔎 Detected objects: ${[...new Set(allDetections)].join(", ")}<br><br>`;
+
+      if (foodBreakdown.length > 0) {
+        resultHTML += `✅ Detected food items:<br>${foodBreakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
       } else {
-        calorieResult.textContent = "⚠️ No known foods detected.";
+        resultHTML += "⚠️ No known foods detected in calorie database.";
       }
 
+      calorieResult.innerHTML = resultHTML;
       canvas.style.display = "block";
     });
   </script>
