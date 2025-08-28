@@ -1,24 +1,37 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Food Calorie Detection (in-browser) -  v4 </title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Food Calorie Detection</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
 <style>
-body { font-family: Arial, sans-serif; text-align: center; margin: 20px; }
-video, img { width: 100%; max-width: 640px; border: 1px solid #222; margin-bottom: 10px; }
-#controls button { margin: 6px; padding: 10px 15px; font-size: 1em; }
-#calorieResult { margin-top: 14px; font-size: 1.1em; font-weight: bold; min-height: 2.4em; }
-#hint { font-size: .9em; color: #555; margin-bottom: 6px; }
-small { color: #666; display:block; margin-top:6px; }
+body {
+font-family: Arial, sans-serif;
+text-align: center;
+margin: 20px;
+}
+video, img {
+width: 100%;
+max-width: 600px;
+border: 1px solid black;
+margin-bottom: 10px;
+}
+#controls button {
+margin: 5px;
+padding: 10px 15px;
+font-size: 1em;
+}
+#calorieResult {
+margin-top: 20px;
+font-size: 1.2em;
+font-weight: bold;
+}
 </style>
-
-<!-- TensorFlow.js and MobileNet -->
-<script src="https://unpkg.com/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
-<script src="https://unpkg.com/@tensorflow-models/mobilenet@2.1.0"></script>
 </head>
 <body>
-<h1>Food Calorie Detection</h1>
+<h1>🍎 Food Calorie Detection</h1>
 
 <div id="controls">
 <button id="startButton">Turn Camera On</button>
@@ -28,13 +41,9 @@ small { color: #666; display:block; margin-top:6px; }
 <button id="switchViewButton" disabled>Switch to Image</button>
 </div>
 
-<div id="hint">Point the camera at a single food item (or the main item) and tap Capture.</div>
-
-<video id="video" autoplay playsinline></video>
-<img id="capturedImage" style="display:none" alt="Captured frame">
-
-<p id="calorieResult">Loading model… please wait.</p>
-<small>Tip: If camera doesn't start, run from <code>http://localhost</code> or an HTTPS page and allow camera permission.</small>
+<video id="video" autoplay></video>
+<img id="capturedImage" style="display:none;">
+<p id="calorieResult">Loading model, please wait…</p>
 
 <script>
 const video = document.getElementById('video');
@@ -46,38 +55,27 @@ const zoomOutButton = document.getElementById('zoomOutButton');
 const captureButton = document.getElementById('captureButton');
 const switchViewButton = document.getElementById('switchViewButton');
 
-let stream = null;
+let stream;
 let videoStreamActive = false;
 let currentView = 'video';
 let zoomLevel = 1;
-let model = null;
+let model;
 let modelReady = false;
 
-// Lightweight calorie lookup table (approximate per serving)
+// --- Small calorie database (expandable) ---
 const CAL_DB = [
-{ keys: ['pizza'], label: 'Pizza (1 slice)', kcal: 285 },
-{ keys: ['cheeseburger','hamburger','burger'], label: 'Burger (1 sandwich)', kcal: 354 },
-{ keys: ['hotdog','hot dog'], label: 'Hot dog (1)', kcal: 151 },
-{ keys: ['french fries','fries'], label: 'French fries (medium)', kcal: 365 },
-{ keys: ['banana'], label: 'Banana (1 medium)', kcal: 105 },
-{ keys: ['apple'], label: 'Apple (1 medium)', kcal: 95 },
-{ keys: ['orange'], label: 'Orange (1 medium)', kcal: 62 },
-{ keys: ['donut','doughnut'], label: 'Donut (1 glazed)', kcal: 195 },
-{ keys: ['ice cream','icecream'], label: 'Ice cream (100 g)', kcal: 207 },
-{ keys: ['sandwich'], label: 'Sandwich (1)', kcal: 250 },
-{ keys: ['pasta','spaghetti','noodles'], label: 'Pasta (1 cup cooked)', kcal: 221 },
-{ keys: ['rice'], label: 'Rice (1 cup cooked)', kcal: 206 },
-{ keys: ['salad'], label: 'Green salad (1 bowl)', kcal: 150 },
-{ keys: ['sushi'], label: 'Sushi (6 pieces)', kcal: 200 },
-{ keys: ['steak','beef'], label: 'Beef steak (100 g)', kcal: 271 },
-{ keys: ['chicken breast','chicken'], label: 'Chicken breast (100 g)', kcal: 165 },
-{ keys: ['bread'], label: 'Bread (1 slice)', kcal: 80 },
-{ keys: ['croissant'], label: 'Croissant (1)', kcal: 231 },
-{ keys: ['muffin'], label: 'Muffin (1)', kcal: 377 }
+{ keys: ['pizza'], label: 'Pizza', kcal: 285 },
+{ keys: ['hamburger','burger','cheeseburger','meat loaf'], label: 'Burger', kcal: 350 },
+{ keys: ['hotdog','hot dog'], label: 'Hot Dog', kcal: 150 },
+{ keys: ['french fries','fries'], label: 'French Fries', kcal: 365 },
+{ keys: ['apple'], label: 'Apple', kcal: 95 },
+{ keys: ['banana'], label: 'Banana', kcal: 105 },
+{ keys: ['orange'], label: 'Orange', kcal: 62 },
+{ keys: ['broccoli'], label: 'Broccoli', kcal: 55 },
+{ keys: ['carrot'], label: 'Carrot', kcal: 41 }
 ];
 
 function estimateCaloriesFromLabel(label) {
-if (!label) return null;
 const l = label.toLowerCase();
 for (const item of CAL_DB) {
 if (item.keys.some(k => l.includes(k))) return item;
@@ -85,135 +83,99 @@ if (item.keys.some(k => l.includes(k))) return item;
 return null;
 }
 
-// Load MobileNet model
-(async function loadModel(){
-try {
-calorieResult.textContent = 'Loading AI model (MobileNet)…';
-// load mobilenet v2
-model = await mobilenet.load({ version: 2, alpha: 1.0 });
+// --- Load MobileNet model ---
+(async () => {
+model = await mobilenet.load();
 modelReady = true;
-calorieResult.textContent = 'Model loaded. Turn camera on and capture an image.';
-// Enable capture only if camera already running
-if (videoStreamActive) captureButton.disabled = false;
-} catch (err) {
-console.error('Model load failed', err);
-calorieResult.textContent = '❌ Failed to load model. Check your network and refresh.';
-}
+calorieResult.textContent = "✅ Model loaded. Ready!";
 })();
 
-// Start / stop camera
-startButton.addEventListener('click', async () => {
+// --- Start / stop camera ---
+startButton.addEventListener('click', () => {
 if (!videoStreamActive) {
-try {
-// Ideal resolution for better accuracy
-stream = await navigator.mediaDevices.getUserMedia({
-video: { facingMode: 'environment', width: {ideal: 1280}, height: {ideal: 720} },
-audio: false
-});
+navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+.then(s => {
+stream = s;
 video.srcObject = stream;
-videoStreamActive = true;
 startButton.textContent = 'Turn Camera Off';
 zoomInButton.disabled = false;
 zoomOutButton.disabled = false;
+captureButton.disabled = false;
 switchViewButton.disabled = false;
-// only enable capture when model also ready
-captureButton.disabled = !modelReady;
-calorieResult.textContent = modelReady ? 'Camera ready. Tap Capture.' : 'Camera ready. Waiting for model...';
-} catch (err) {
-console.error('Camera error', err);
-alert('Error accessing camera: ' + err.message);
-}
+videoStreamActive = true;
+})
+.catch(err => alert("Error accessing camera: " + err));
 } else {
-// stop
-if (stream) stream.getTracks().forEach(t => t.stop());
-stream = null;
-videoStreamActive = false;
+stream.getTracks().forEach(track => track.stop());
 startButton.textContent = 'Turn Camera On';
 zoomInButton.disabled = true;
 zoomOutButton.disabled = true;
 captureButton.disabled = true;
 switchViewButton.disabled = true;
-calorieResult.textContent = modelReady ? 'Model loaded. Turn camera on and capture an image.' : 'Model loaded. Turn camera on.';
-// reset zoom & view
+videoStreamActive = false;
 zoomLevel = 1;
 video.style.transform = `scale(${zoomLevel})`;
-capturedImage.style.display = 'none';
-video.style.display = 'block';
-currentView = 'video';
-switchViewButton.textContent = 'Switch to Image';
 }
 });
 
-// Zoom (CSS scale)
+// --- Zoom controls ---
 zoomInButton.addEventListener('click', () => {
-zoomLevel = Math.min(2.5, (zoomLevel + 0.1));
+zoomLevel += 0.1;
 video.style.transform = `scale(${zoomLevel})`;
 });
 zoomOutButton.addEventListener('click', () => {
-zoomLevel = Math.max(0.5, (zoomLevel - 0.1));
+if (zoomLevel > 0.2) {
+zoomLevel -= 0.1;
 video.style.transform = `scale(${zoomLevel})`;
+}
 });
 
-// Capture + classify
-captureButton.addEventListener('click', async () => {
-if (!videoStreamActive) {
-calorieResult.textContent = 'Camera is not running.';
-return;
-}
-if (!modelReady) {
-calorieResult.textContent = 'Model is still loading. Please wait.';
-return;
-}
+// --- Capture & classify ---
+captureButton.addEventListener('click', () => {
+if (!videoStreamActive || !modelReady) return;
+calorieResult.textContent = '🔍 Capturing and analyzing...';
 
-calorieResult.textContent = '🔍 Capturing image and detecting…';
-
-// create canvas and draw current frame
 const canvas = document.createElement('canvas');
 canvas.width = video.videoWidth || 640;
 canvas.height = video.videoHeight || 480;
-const ctx = canvas.getContext('2d');
-ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
 capturedImage.src = canvas.toDataURL('image/png');
 
-// show captured image (switch view)
-video.style.display = 'none';
-capturedImage.style.display = 'block';
-currentView = 'image';
-switchViewButton.textContent = 'Switch to Video';
-switchViewButton.disabled = false;
-
+// Wait until image loads before classification
+capturedImage.onload = async () => {
 try {
-// classify the image element
 const predictions = await model.classify(capturedImage, 5);
-if (!predictions || !predictions.length) {
-calorieResult.textContent = 'No predictions from model.';
-return;
-}
+console.log('Predictions:', predictions);
 
-// Try to map best prediction to calorie DB
 let mapped = estimateCaloriesFromLabel(predictions[0].className);
-// if not found, try top 4
 if (!mapped) {
-for (let i = 1; i < Math.min(predictions.length, 5); i++) {
+for (let i = 1; i < predictions.length; i++) {
 mapped = estimateCaloriesFromLabel(predictions[i].className);
 if (mapped) break;
 }
 }
 
-const top3 = predictions.slice(0,3).map(p => `${p.className} (${(p.probability*100).toFixed(1)}%)`).join(' • ');
+const top3 = predictions.slice(0,3)
+.map(p => `${p.className} (${(p.probability*100).toFixed(1)}%)`)
+.join(' • ');
 
 if (mapped) {
-calorieResult.innerHTML = `✅ <strong>${mapped.label}</strong> ≈ <strong>${mapped.kcal} kcal</strong><br/><span style="font-size:.9em;color:#555">AI guesses: ${top3}</span>`;
+calorieResult.innerHTML =
+`✅ <strong>${mapped.label}</strong> ≈ <strong>${mapped.kcal} kcal</strong><br/>
+<span style="font-size:.9em;color:#555">AI guesses: ${top3}</span>`;
 } else {
-calorieResult.innerHTML = `⚠️ Could not confidently map to a known food in the local DB.<br/><span style="font-size:.9em;color:#555">Top guesses: ${top3}</span>`;
+calorieResult.innerHTML =
+`⚠️ No calorie match found.<br/>
+Top guesses: ${top3}`;
 }
 } catch (err) {
-console.error('Classification error', err);
-calorieResult.textContent = '❌ Error during detection. See console for details.';
+console.error(err);
+calorieResult.textContent = '❌ Error during detection.';
 }
+};
 });
 
-// Switch view between video and captured image
+// --- Switch view ---
 switchViewButton.addEventListener('click', () => {
 if (currentView === 'video') {
 video.style.display = 'none';
@@ -227,15 +189,6 @@ switchViewButton.textContent = 'Switch to Image';
 currentView = 'video';
 }
 });
-
-// Debug: log if model failed to load within 20s
-setTimeout(() => {
-if (!modelReady) {
-console.warn('Model still not ready after 20s — check network or console.');
-if (!videoStreamActive) calorieResult.textContent = 'Loading model… (still trying).';
-}
-}, 20000);
-
 </script>
 </body>
 </html>
