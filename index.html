@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Food & Object Detection with Calories - Version 8</title>
+  <title>Blind Guide + Food & Object Detection with Calories - Version 8</title>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.9.0"></script>
   <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
   <style>
@@ -31,11 +31,12 @@
   </style>
 </head>
 <body>
-  <h1>🍽️ Food & Object Detection with Calories <br><small>Version 8</small></h1>
+  <h1>🦯 Blind Guide + 🍽️ Food & Object Detection <br><small>Version 8</small></h1>
 
   <div id="controls">
     <button id="startButton">Turn Camera On</button>
     <button id="captureButton" disabled>Capture & Detect</button>
+    <button id="speakButton" disabled>🔊 Speak Results</button>
   </div>
 
   <video id="video" autoplay muted></video>
@@ -49,6 +50,7 @@
     const ctx = canvas.getContext('2d');
     const startButton = document.getElementById('startButton');
     const captureButton = document.getElementById('captureButton');
+    const speakButton = document.getElementById('speakButton');
     const calorieResult = document.getElementById('calorieResult');
 
     let stream;
@@ -56,7 +58,8 @@
     let modelReady = false;
     let videoStreamActive = false;
 
-    // --- Food Calorie Database ---
+    let lastSpokenText = ''; // For voice output
+
     const CAL_DB = {
       apple: 95, banana: 105, orange: 62, grape: 62, watermelon: 85, pineapple: 82,
       mango: 201, strawberry: 50, blueberry: 85, pear: 102, peach: 58, plum: 30,
@@ -71,14 +74,14 @@
       return label.toLowerCase().replace(/[\s_-]/g, "");
     }
 
-    // --- Load the COCO-SSD model ---
+    // --- Load COCO-SSD Model ---
     (async () => {
       model = await cocoSsd.load();
       modelReady = true;
       calorieResult.textContent = "✅ Model loaded. Ready!";
     })();
 
-    // --- Toggle camera ---
+    // --- Camera Toggle ---
     startButton.addEventListener('click', () => {
       if (!videoStreamActive) {
         navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
@@ -94,11 +97,12 @@
         stream.getTracks().forEach(track => track.stop());
         startButton.textContent = 'Turn Camera On';
         captureButton.disabled = true;
+        speakButton.disabled = true;
         videoStreamActive = false;
       }
     });
 
-    // --- Capture and detect objects ---
+    // --- Capture and Detect ---
     captureButton.addEventListener('click', async () => {
       if (!videoStreamActive || !modelReady) return;
       calorieResult.textContent = "🔍 Detecting...";
@@ -123,7 +127,6 @@
         const isFood = CAL_DB.hasOwnProperty(normalized);
         const cal = isFood ? CAL_DB[normalized] : null;
 
-        // Draw bounding box
         ctx.strokeStyle = isFood ? "green" : "red";
         ctx.fillStyle = isFood ? "green" : "red";
         ctx.strokeRect(...p.bbox);
@@ -133,20 +136,36 @@
 
         if (cal) {
           totalCalories += cal;
-          foodBreakdown.push(`${p.class} ≈ ${cal} kcal`);
+          foodBreakdown.push(`${p.class} ≈ ${cal} calories`);
         }
       });
 
       let resultHTML = `🔎 Detected objects: ${[...new Set(allDetections)].join(", ")}<br><br>`;
+      let speakOutput = `Detected: ${[...new Set(allDetections)].join(", ")}. `;
 
       if (foodBreakdown.length > 0) {
-        resultHTML += `✅ Detected food items:<br>${foodBreakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} kcal</strong>`;
+        resultHTML += `✅ Detected food items:<br>${foodBreakdown.join("<br>")}<br><br><strong>Total ≈ ${totalCalories} calories</strong>`;
+        speakOutput += `Calories detected. ${foodBreakdown.join(". ")}. Total approximately ${totalCalories} calories.`;
       } else {
         resultHTML += "⚠️ No known foods detected in calorie database.";
+        speakOutput += "No food items found in calorie database.";
       }
 
       calorieResult.innerHTML = resultHTML;
+      lastSpokenText = speakOutput;
+      speakButton.disabled = false;
       canvas.style.display = "block";
+    });
+
+    // --- Text-to-Speech for Accessibility ---
+    speakButton.addEventListener('click', () => {
+      if (!lastSpokenText) return;
+      const synth = window.speechSynthesis;
+      const utter = new SpeechSynthesisUtterance(lastSpokenText);
+      utter.lang = "en-US";
+      utter.rate = 1;
+      synth.cancel(); // Stop ongoing speech if any
+      synth.speak(utter);
     });
   </script>
 </body>
